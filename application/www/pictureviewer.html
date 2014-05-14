@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="UTF-8">
+
+	<title>Bigscreen - Picture viewer</title>
+
+	<link rel="stylesheet" href="pictureviewer.css">
+	<script type="text/javascript" src="engine.io.js"></script>
+	<script type="text/javascript" src="spaceifyclient.js"></script>
+	<script type="text/javascript" src="pictureviewer_lang.js"></script>
+
+	<script type="text/javascript">
+		var self = this;
+		var rpc = null;
+		var isMaster = false;
+		var pictureWidth = 0;
+		var pictureHeight = 0;
+		var pictures = [];
+		var picturesPos = -1;
+		var pictureTimeout = null;
+		var messageTimeout = null;
+		var plPictureURL = null;
+		var unique_name = "spaceify/pictureviewer";
+		var MAX_PICTURES = 3;
+		var INFO_TIMEOUT = 5000;
+		var PICTURE_TIMEOUT = 5000;
+		var NEW_PICTURE_TIMEOUT = 5000;
+		var FADEIN_TIME = 1200;
+		var FADEOUT_TIME = 500;
+		var MESSAGE_TIMEOUT = 10;
+
+		// GET HOST FROM THE URL
+		EDGE_HOSTNAME = window.location.hostname;
+		document.domain = window.location.hostname;						// Same Origin Policy
+
+		// PARSE GET
+		var get = spaceifyCore.GET(window.location.toString(), false);
+		plPictureURL = (get.url ? spaceifyCore.decodeBase64(get.url) : null);
+
+		/**
+		* DOM * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+		*/
+		window.addEventListener("load",  function()
+			{
+				if(typeof jQuery == "undefined")
+				{
+					var head = document.getElementsByTagName("head")[0] || document.documentElement;
+					var script = document.createElement('script');
+					script.onload = function()
+					{
+						script.onload = null;
+						readyToStart();
+					}
+					script.src = location.protocol + "//" + EDGE_HOSTNAME + "/js/metro/jquery/jquery.min.js";
+					head.parentNode.insertBefore(script, head.nextSibling);
+				}
+				else
+					readyToStart();
+			}, false);
+
+		window.addEventListener("unload", connectionClose(), true);
+
+		window.addEventListener("resize", resize, false);
+
+		function readyToStart()
+		{
+			$("#picture").load(function()															// Bind event handler to the picture element
+			{
+				pictureWidth = $(this).width();
+				pictureHeight = $(this).height();
+				resize();
+
+				$(this).fadeIn(FADEIN_TIME, function()
+				{
+					picturesPos++;
+					pictureTimeout = setTimeout(loadPicture, PICTURE_TIMEOUT);
+				});
+			});
+
+			spaceifyCore.findService(unique_name, "backend", serviceFound);							// Find the pictureviewer backend service
+		}
+
+		function resize()
+		{
+			var pict = $("#picture");
+			if(!pict || pict.length == 0)
+				return;
+
+			var ratio = 1.0;
+			var picturew = pictureWidth;
+			var pictureh = pictureHeight;
+			var screenw = $(window).width();
+			var screenh = $(window).height();
+
+			if(picturew > screenw)
+				ratio = screenw / picturew;
+			else if(pictureh > screenh)
+				ratio = screenh / pictureh;
+			picturew = Math.round(picturew * ratio);
+			pictureh = Math.round(pictureh * ratio);
+
+			pict.width(picturew);
+			pict.height(pictureh);
+			pict.css("position", "absolute");
+			pict.css("top", (Math.abs(screenh - pictureh) / 2) + "px");
+			pict.css("left", (Math.abs(screenw - picturew) / 2) + "px");
+		}
+
+		/**
+		* RPC * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+		*/
+		function serviceFound(err, hostdata)
+		{ // Call window.parent.pageLoaded (bigscreen index.html) to finish the page load.
+			if(err)
+			{
+				showMessage(language.formatErrorString(language.E_FIND_PICTUREVIEWER_BACKEND, err), -1);
+
+				window.parent.pageLoaded({data: plPictureURL, source: "pictureviewer", initialized: false});
+			}
+			else
+			{
+				// Connect to the pictureviewer backend service
+				rpc = new SpaceifyRPC(hostdata, false, function(err, data)
+				{
+					if(err || data !== true)
+					{
+						showMessage(language.formatErrorString(language.E_CONNECT_PICTUREVIEWER_BACKEND, (err ? err : data)), -1);
+						closeRPC();
+
+						window.parent.pageLoaded({data: plPictureURL, source: "pictureviewer", initialized: false});
+					}
+					else
+					{
+						showMessage(language.PICTUREVIEWER_BACKEND_CONNECTED, MESSAGE_TIMEOUT);
+
+						rpc.exposeRPCMethod("showPicture", self, showPicture);
+
+						rpc.setCloseEventListener(connectionClose);
+
+						window.parent.pageLoaded({data: plPictureURL, source: "pictureviewer", initialized: true});
+					}
+				});
+			}
+		}
+
+		function connectionClose()
+		{
+			closeRPC();
+
+			showMessage(language.PICTUREVIEWER_BACKEND_CONNECTION_LOST, -1);
+		}
+
+		function closeRPC()
+		{
+			if(rpc != null)
+			{
+				rpc.close();
+				rpc = null;
+			}
+		}
+
+		/**
+		* RPC METHODS * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+		*/
+		function showPicture(url)
+		{
+			var uget = spaceifyCore.GET(url, true);											// parse GET and src url
+			var a = $('<a>', { href: uget.origin } )[0];
+
+			var pid = "";
+			var purl = "";
+			if(	a.hostname == "hs10.snstatic.fi" || a.hostname == "hs11.snstatic.fi" ||		// image from hs.fi
+				a.hostname == "hs12.snstatic.fi" || a.hostname == "hs13.snstatic.fi")
+			{
+				var ps = a.pathname.split("/");
+				pid = ps[ps.length - 1];
+				purl = a.origin + "/webkuva/taysi/2000/" + pid;									// get the largets possible picture
+			}
+			else																			// image from some other source
+				pid = purl = uget.origin;
+
+			var ppos = -1;																	// Is image already in the array
+			for(p in pictures)
+			{
+				if(pictures[p].pid == pid)
+				{ ppos = p; break; }
+			}
+
+			if(ppos == -1)																	// Add only new pictures to the array
+			{
+				if(pictures.length == MAX_PICTURES)												// Max pictures -> remove first
+					pictures.shift();
+				pictures.push({pid: pid, url: purl});
+				picturesPos = pictures.length - 1;
+			}
+			else																			// Show existing images
+				picturesPos = ppos;
+
+			loadPicture();
+
+			return true;
+		}
+
+		function loadPicture()
+		{
+			if(pictureTimeout != null)
+				window.clearTimeout(pictureTimeout);
+			pictureTimeout = null;
+
+			var vobj = ($('#picture').is(':visible') ? $("#picture") : $("#info"));
+			vobj.fadeOut(FADEOUT_TIME, function()
+			{
+				if(picturesPos == pictures.length)											// Show info page
+				{
+					picturesPos = 0;
+					$("#info").fadeIn(FADEIN_TIME);
+					pictureTimeout = setTimeout(loadPicture, INFO_TIMEOUT);
+				}
+				else																		// Show image
+				{
+					var pict = $("#picture");
+					pict.width("auto");															// "Reset" size or otherwise the image won't be resized in the load event
+					pict.height("auto");
+					pict.attr("src", pictures[picturesPos].url);
+				}
+			});
+		}
+
+		/**
+		* COMMON FUNCTIONS  * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *
+		*/
+		function setMaster(state)															// The parent (bigscreen index.html) calls this and setMaster must be implemented by child pages!!!
+		{
+			isMaster = state || isMaster;													// Leave state unchanged if new state is undefined
+		}
+
+		function showMessage(msgstr, time)
+		{
+			if((div = document.getElementById("message_div")) == null) return;
+			while(div.firstChild) div.removeChild(div.firstChild);
+
+			var text = document.createTextNode(msgstr);
+			div.appendChild(text);
+
+			div.style.display = "inline";
+
+			if(time != -1)
+			{
+				if(messageTimeout != null) clearTimeout(messageTimeout);
+				messageTimeout = setTimeout(function() { div.style.display = "none"; messageTimeout = null; }, time * 1000);
+			}
+
+			console.log(msgstr);
+		}
+	</script>
+</head>
+
+<body>
+	<div id="message_div" class="pv_messagediv"></div>
+	<img id="picture" src="" alt=""></img>
+
+	<div id="info" class="pv_info">
+		<h1>&nbsp;Tällä näytöllä näytetään kuvia Helsingin Sanomien verkkolehden sivuilta.</h1>
+
+		<br>&nbsp;&nbsp;Alla ohje miten voit saada kuvan näytettäväksi tälle ruudulle:<br><br>
+
+		<ul type="square">
+			<li>Yhdistä mobiililaitteesi spaceify-nimiseen avoimeen langattomaan verkkoon.</li>
+			<li>Käynnistä laitteesi webselain ja mene osoitteeseen <b>hs.fi</b>.</li>
+			<li>Sivustoa selatessa joidenkin kuvien ylä- ja alareunaan ilmestyy vihreät reunukset. Klikkaamalla tällaista kuvaa näytetään se tällä näytöllä.</li>
+		</ul>
+	</div>
+</body>
+</html>

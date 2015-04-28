@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="UTF-8">
+
+	<title>Picture viewer</title>
+
+	<link rel="stylesheet" href="style.css">
+	<script type="text/javascript" src="http://edge.spaceify.net/engine.io.js"></script>
+	<script type="text/javascript" src="http://edge.spaceify.net/spaceifyclient.js"></script>
+	<script type="text/javascript" src="language.js"></script>
+
+	<script type="text/javascript">
+		var self = this;
+		var pictures = [];
+		var picturesPos = -1;
+		var pictureWidth = 0;
+		var pictureHeight = 0;
+		var spaceletRPC = null;
+		var pictureTimeoutId = null;
+		var messageTimeoutId = null;
+
+		var MAX_PICTURES = 3;
+		var FADEIN_TIME = 500;
+		var FADEOUT_TIME = 500;
+		var INFO_TIMEOUT = 10 * 1000;
+		var PICTURE_TIMEOUT = 5 * 1000;
+		var RECONNECT_TIMEOUT = 10 * 1000;
+
+		EDGE_HOSTNAME = window.location.hostname;
+		document.domain = window.location.hostname;										// Same Origin Policy, bigscreen has the same domain
+
+		var bs_id = window.parent.bs_id;												// This iframe is identified by its parents id
+
+		/*****************
+		* DOM AND EVENTS *
+		*****************/
+		window.addEventListener("load", function()
+		{
+			// jQuery is required and must be loaded if it isn't.
+			if(typeof jQuery == "undefined")
+			{
+				var script = document.createElement("script");
+				script.type = "text/javascript";
+				script.onreadystatechange = function()
+				{
+					if(this.readyState == 4)
+					{
+						bindOnLoad();
+						connect();
+					}
+				}
+				script.onload = function()
+				{
+					bindOnLoad();
+					connect();
+				}
+				script.src = location.protocol + "//" + EDGE_HOSTNAME + "/js/jquery-1.11.1.min.js";
+
+				var head = document.getElementsByTagName("head")[0] || document.documentElement;
+				head.parentNode.insertBefore(script, head.nextSibling);
+			}
+			else
+				connect();
+		}, false);
+
+		function bindOnLoad()
+		{   // Bind onload event handler to the picture element. Fired when src is changed.
+			$("#picture").load(function()
+			{
+				pictureWidth = $(this).width();
+				pictureHeight = $(this).height();
+				resize();
+
+				$(this).fadeIn(FADEIN_TIME, function()
+				{
+					picturesPos++;
+					pictureTimeoutId = setTimeout(loadPicture, PICTURE_TIMEOUT);
+				});
+			});
+		}
+
+		window.addEventListener("resize", resize, false);
+		function resize()
+		{
+			var pict = $("#picture");
+			if(!pict || pict.length == 0)
+				return;
+
+			var picturew = pictureWidth;
+			var pictureh = pictureHeight;
+			var screenw = $(window).width();
+			var screenh = $(window).height();
+
+			var wratio = 1.0;													// If the picture is wider and/or taller than the screen, use the smaller ratio to scale it.
+			var hratio = 1.0;
+			if(picturew > screenw)
+				wratio = screenw / picturew;
+			if(pictureh > screenh)
+				hratio = screenh / pictureh;
+			var ratio = Math.min(wratio, hratio);
+
+			picturew = Math.round(picturew * ratio);
+			pictureh = Math.round(pictureh * ratio);
+
+			pict.width(picturew);
+			pict.height(pictureh);
+			pict.css("position", "absolute");
+			pict.css("top", (Math.abs(screenh - pictureh) / 2) + "px");
+			pict.css("left", (Math.abs(screenw - picturew) / 2) + "px");
+		}
+
+		/*****************
+		* RPC CONNECTION *
+		*****************/
+		function connect()
+		{   // Start the Picture viewer spacelet and connect to it
+			$SC.startSpacelet("spaceify/pictureviewer", "spaceify.org/services/pictureviewer", function(err, data)
+			{
+				if(!err)
+				{
+					spaceletRPC = data.rpc;										// RPC connection to the spacelet...
+					spaceletRPC.connectionListener(close);						// ..is kept open as long as spacelet closes it
+
+					spaceletRPC.exposeMethod("showPicture", self, self.showPicture);
+
+					spaceletRPC.call("contentConnect", [bs_id], null, null);	// Notify spacelet of connected content
+
+					var getobj = $SN.parseGET(window.location.href);			// Show the requested image
+					showPicture(getobj.pid);
+				}
+				else
+					close(true);
+			});
+		}
+
+		function close(isInternal)
+		{
+			if(spaceletRPC)
+				spaceletRPC.close();
+
+			window.setTimeout(connect, RECONNECT_TIMEOUT * 1000);				// Try to reconnect
+		}
+
+		/****************************
+		* EXPOSED JSONC-RPC METHODS *
+		****************************/
+		function showPicture(pid)
+		{
+			var ppos = -1;														// Is image already in the array
+			for(p in pictures)
+			{
+				if(pictures[p] == pid)
+				{ ppos = p; break; }
+			}
+
+			if(ppos == -1)														// Add only new pictures to the array
+			{
+				if(pictures.length == MAX_PICTURES)									// Max pictures -> remove first
+					pictures.shift();
+				pictures.push(pid);
+				picturesPos = pictures.length - 1;
+			}
+			else																// Show existing image
+				picturesPos = ppos;
+
+			loadPicture();
+
+			return true;
+		}
+
+		/********************
+		* UTILITY FUNCTIONS *
+		********************/
+		function loadPicture()
+		{
+			if(pictureTimeoutId)												// Clear previous timer
+				window.clearTimeout(pictureTimeoutId);
+			pictureTimeoutId = null;
+
+			var vobj = ($("#picture").is(":visible") ? $("#picture") : $("#info"));
+			vobj.fadeOut(FADEOUT_TIME, function()
+			{
+				if(picturesPos == pictures.length)								// Show info page
+				{
+					picturesPos = 0;
+					$("#info").fadeIn(FADEIN_TIME);
+					pictureTimeoutId = setTimeout(loadPicture, INFO_TIMEOUT);
+				}
+				else															// Show image
+				{
+					var pict = $("#picture");
+					pict.width("auto");												// "Reset" size or otherwise the image won't be resized in the load event
+					pict.height("auto");
+					pict.attr("src", "http://hs10.snstatic.fi/webkuva/taysi/2000/" + pictures[picturesPos]);
+				}
+			});
+		}
+	</script>
+</head>
+
+<body>
+	<img id="picture" src="" alt=""></img>
+
+	<div id="info" class="info">
+		<h2>&nbsp;Tällä näytöllä näytetään käyttäjien valitsemia kuvia Helsingin Sanomien verkkolehden sivuilta.</h2>
+
+		<br>&nbsp;&nbsp;Alla ohje miten kuvia saa näytölle:<br>
+
+		<ul type="square">
+			<li>Yhdistä mobiililaitteesi spaceify-nimiseen avoimeen langattomaan verkkoon.</li>
+			<li>Käynnistä laitteesi webselain ja mene osoitteeseen <u>hs.fi</u>.</li>
+			<li>Sivustoa selatessa kuvien ylä- ja alareunaan ilmestyy vihreät reunukset. Klikkaa kuvaa näyttääksesi sen.</li>
+		</ul>
+
+		<br>
+
+		<h2>&nbsp;On this screen are user selected pictures from the Helsingin Sanomat online news service.</h2>
+
+		<br>&nbsp;&nbsp;Below are instructions how to show pictures on the screen:<br>
+
+		<ul type="square">
+			<li>Connect your mobile device to the open wireless network called spaceify.</li>
+			<li>Start your devices web browser and browse to address <u>hs.fi</u>.</li>
+			<li>The pictures on the web page have green bars on top and bottom of the pictures. Clicking these pictures shows them on the screen.</li>
+		</ul>
+	</div>
+</body>
+</html>

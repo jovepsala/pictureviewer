@@ -3,17 +3,9 @@
  * PictureViewer, 2.4.2014 Spaceify Inc.
  * 
  * @class PictureViewer
- *
- * NOTICE! The use of "master" is here for demonstration only. Its intended purpose is to 
- * control messages sent to clients from content pages. It is usefull in applications 
- * where messages from multiple content pages might flood clients with duplicate messages.
- * One example is video applications which send progress messages.
- *
- *
  */
 
 var fs = require("fs");
-var url = require("url");
 var fibrous = require("fibrous");
 var logger = require("/api/logger");
 var Utility = require("/api/utility");
@@ -26,8 +18,8 @@ function PictureViewer()
 {
 	var self = this;
 
-	var clients = [];
-	var content = [];
+	var clients = {};
+	var content = {};
 	var content_type = "spaceify/pictureviewer";
 	var httpServer = new WebServer();
 	var httpsServer = new WebServer();
@@ -52,37 +44,38 @@ function PictureViewer()
 			rpc.exposeMethod("showPicture", self, self.showPicture);
 			rpc.exposeMethod("clientConnect", self, self.clientConnect);
 			rpc.exposeMethod("contentConnect", self, self.contentConnect);
-			rpc.connect.sync({hostname: null, port: Config.FIRST_SERVICE_PORT, connectionListener: connectionListener, owner: "Pictureviewer" });
-
+			rpc.setDisconnectionListener(disconnectionListener);
+			rpc.connect.sync({hostname: null, port: Config.FIRST_SERVICE_PORT, owner: "Pictureviewer"});
+			
 			rpcs.exposeMethod("getBigScreenIds", self, self.getBigScreenIds);
 			rpcs.exposeMethod("showPicture", self, self.showPicture);
 			rpcs.exposeMethod("clientConnect", self, self.clientConnect);
 			rpcs.exposeMethod("contentConnect", self, self.contentConnect);
-			rpcs.connect.sync({hostname: null, port: Config.FIRST_SERVICE_PORT_SECURE, is_secure: true, key: key, crt: crt, ca_crt: ca_crt, connectionListener: connectionListener, owner: "Pictureviewer" });
+			rpcs.setDisconnectionListener(disconnectionListener);
+			rpcs.connect.sync({hostname: null, port: Config.FIRST_SERVICE_PORT_SECURE, is_secure: true, key: key, crt: crt, ca_crt: ca_crt, owner: "Pictureviewer" });
 
 			// Start applications http and https web servers
 			httpServer.connect.sync({hostname: null, port: 80, www_path: www_path, owner: "pictureviewer"});
 			httpsServer.connect.sync({hostname: null, port: 443, is_secure: true, key: key, crt: crt, ca_crt: ca_crt, www_path: www_path, owner: "Pictureviewer"});
 
 			// Register provided services
-			rpcCore.sync.call("registerService", ["spaceify.org/services/pictureviewer"], self);
+			rpcCore.sync.callRPC("registerService", ["spaceify.org/services/pictureviewer"], self);
 
 			// Connect to the Big screen application
 				// Get the required service - this throws an error if service is not available -> initialization fails and spacelet is not started.
-			var service = rpcCore.sync.call("getService", ["spaceify.org/services/bigscreen", null], self);
+			var service = rpcCore.sync.callRPC("getService", ["spaceify.org/services/bigscreen", null], self);
 
 				// Open a connection to the service.
 			rpcBS.sync.connect({hostname: Config.EDGE_HOSTNAME, port: service.port, persistent: true});
 
-			// Notify the core application initialialized itself successfully
-			rpcCore.sync.call("initialized", [true, null], self);
+			// Application initialialized itself successfully.
+			console.log(Config.CLIENT_APPLICATION_INITIALIZED);
 		}
 		catch(err)
 		{
-			logger.error(err.message);
-
-			// Notify the core application failed to initialialize itself. The error message can be passed to the core.
-			rpcCore.sync.call("initialized", [false, err.message], self);
+			// Application failed to initialialize itself. Pass the error message to the core.
+			logger.error("{{" + err.message + "}}");
+			console.log(Config.CLIENT_APPLICATION_UNINITIALIZED);
 
 			stop.sync();
 		}
@@ -106,34 +99,13 @@ function PictureViewer()
 	/************************
 	* MANAGE CONNECTIONS!!! *
 	************************/
-	var connectionListener = function(type, owner, connection)
+	var disconnectionListener = function(connection)
 	{
-		if(type != "close") return;
+		if(clients[connection.id])
+			delete clients[connection.id];
 
-		for(var i=0; i<content.length; i++)												// Remove content page connection and set new master
-		{
-			if(content[i].connection == connection)
-			{
-				var cntnt = content.splice(i, 1);
-
-				for(var j=0; j<content.length; j++)
-				{
-					if(content[j].bs_id == cntnt.bs_id)
-					{ content[j].isMaster = true; break; }
-				}
-
-				break;
-			}
-		}
-
-		for(var i=0; i<clients.length; i++)												// Remove client connection
-		{
-			if(clients[i].connection == connection)
-			{
-				clients.splice(i, 1);
-				break;
-			}
-		}
+		if(content[connection.id])
+			delete content[connection.id];
 	}
 
 	/***************************
@@ -144,54 +116,36 @@ function PictureViewer()
 	self.clientConnect = fibrous( function(bs_id)
 	{
 		var connection = arguments[arguments.length - 1];
-		clients.push({bs_id: bs_id, connection: connection, id: connection.id, is_secure: connection.is_secure});
+		clients[connection.id] = {bs_id: bs_id, connection: connection, is_secure: connection.is_secure};
 	});
 
 	// Add a content page to the connected content pages
 	self.contentConnect = fibrous( function(bs_id)
 	{
-		// One of the content pages with bs_id must be the master.
-		var isMaster = true;
-		for(var i=0; i<content.length; i++)
-		{
-			if(content[i].isMaster && content[i].bs_id) {
-				isMaster = false; break; }
-		}
-
 		var connection = arguments[arguments.length - 1];
-		content.push({bs_id: bs_id, isMaster: isMaster, connection: connection, id: connection.id, is_secure: connection.is_secure});
+		content[connection.id] = {bs_id: bs_id, connection: connection, is_secure: connection.is_secure};
 	});
 
 	// Send picture id to the content page(s) having the bs_id.
-	self.showPicture = fibrous( function(_url, bs_id, is_secure)
+	self.showPicture = fibrous( function(pid, bs_id, is_secure)
 	{
-		var purl = url.parse(_url, false);												// Get the picture id from the URL
-		var pids = purl.pathname.split("/");
-		var pid = pids[pids.length - 1];
-
-		var hasBS = false;
-		for(var i=0; i<content.length; i++)												// Send showPicture request if possible
+		var content_pages = 0;
+		for(var id in content)												// Send showPicture request to all content pages having the bs_id
 		{
-			if(content[i].bs_id == bs_id)
-			{
-				hasBS = true;
-				(!content[i].is_secure ? rpc : rpcs).sync.call("showPicture", [pid], self, content[i].id);
-			}
+			if(content[id].bs_id == bs_id)
+				content_pages += (is_secure ? rpc : rpcs).sync.callRPC("showPicture", [pid], self, null, id);
 		}
 
-		if(!hasBS)																		// No big screens having our content available yet
-		{
-			var port = (!is_secure ? process.env["PORT_80"] : process.env["PORT_443"]);
-			var URL = (!is_secure ? "http://" : "https://") + Config.EDGE_HOSTNAME + ":" + port + "/content.html?pid=" + pid;
+		if(content_pages == 0)												// No content pages having our content available yet
+			content_pages = rpcBS.sync.callRPC("loadContent", [Utility.getApplicationURL(is_secure) + "/content.html?pid=" + pid, bs_id, content_type], self);
 
-			return rpcBS.sync.call("setContentURL", [URL, bs_id, content_type], self);
-		}
+		return content_pages;
 	});
 
 	// Get the ids from big screens and relay them to the client
 	self.getBigScreenIds = fibrous( function()
 	{
-		return rpcBS.sync.call("getBigScreenIds", [], self);
+		return rpcBS.sync.callRPC("getBigScreenIds", [], self);
 	});
 
 }

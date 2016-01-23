@@ -5,100 +5,44 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=100%, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 
+	<link href="tile.css" rel="stylesheet" type="text/css" media="screen">
+
+	<script src="/js/jquery-1.11.3.min.js"></script>
+	<script src="/lib/spaceifyinitialize.js"></script>							<!-- Use Spaceify's classes. Wait for spaceifyReady event! -->
+
 	<title></title>
 
-	<style>
-	body {
-		margin: 0px;
-		padding: 0px;
-		font-family: 'Segoe UI Light_', 'Open Sans Light', Verdana, Arial, Helvetica, sans-serif;
-	}
-
-	.edgeTile {
-		position: relative;
-		float: left;
-		display: inline;
-		width: 276px;
-		height: 148px;
-		padding: 0px;
-		margin: 0px 0px 0px 0px;
-	}
-
-	.edgeTileImage {
-		float: left;
-		width: 128px;
-		height: 128px;
-		margin: 10px 5px 0px 5px;
-		padding: 0px;
-	}
-
-	.edgeTileInfo {
-		float: left;
-		margin: 10px 5px 0px 5px;
-		padding: 0px;
-		width: 128px;
-		height: 128px;
-		overflow: hidden;
-		text-shadow: 2px 2px 2px rgba(0, 0, 0, 0.3);
-	}
-
-	.edgeTileInfoTitle {
-		clear: both;
-		float: left;
-		margin: 0px;
-		padding: 0px;
-		font-size: 80%;
-		font-weight: bold;
-	}
-	.edgeTileInfoTitle.spacer {
-		height: 20px;
-	}
-	</style>
-
 	<script>
-		var p = window.parent;
-		var unique_name = "spaceify/pictureviewer";
-
-		window.addEventListener("load", function()
+		window.addEventListener("spaceifyReady", function()
 			{
-			p.$SC.getManifest(unique_name, function(err, data)
+			var core = new SpaceifyCore();
+			core.getManifest("spaceify/pictureviewer", function(err, manifest)
 				{
-				var head = document.getElementsByTagName("head")[0] || document.documentElement;
-    	    	var dtags = [
-        			{ context: document, id: "pic0", src: "images/icon.png" },
-        			{ createtag: "script", context: head, src: "js/jquery-1.11.1.min.js", type: "text/javascript" }];
-				p.spaceifyRequest.loadResources(dtags, unique_name, function()
-					{
-					$("#name").append(document.createTextNode(data.name));
-					$("#version").append(document.createTextNode("v" + data.version));
-					$("#developer").append(document.createTextNode(data.developer.name));
-					$("#category").append(document.createTextNode(data.category));
-					});
+				jQuery("#name").append(document.createTextNode(manifest.name));
+				jQuery("#version").append(document.createTextNode("v" + manifest.version));
+				jQuery("#developer").append(document.createTextNode(manifest.developer.name));
+				jQuery("#category").append(document.createTextNode(manifest.category));
+				jQuery("#edgeTile").css({visibility: "visible"});
 				});
-			});
-
-		window.addEventListener("click", function()
-			{
-			window.open("http://www.hs.fi", "_blank");
 			});
 	</script>
 </head>
 
-<body>
-	<div class="edgeTile">
+<body style="overflow: hidden;" onclick="window.open('http://www.hs.fi', '_blank')">
+	<div class="edgeTile" style="visibility: hidden;" id="edgeTile">
 
 		<div class="edgeTileImage">
-			<img width="128" height="128" id="pic0">
+			<img width="128" height="128" src="images/icon.png" id="icon">
 		</div>
 
 		<div class="edgeTileInfo">
-			<div class="edgeTileInfoTitle spacer" id="name"></div>
+			<div class="edgeTitle spacer" id="name"></div>
 
-			<div class="edgeTileInfoItem" id="version"></div>
+			<div class="edgeItem" id="version"></div>
 
-			<div class="edgeTileInfoItem" id="developer"></div>
+			<div class="edgeItem" id="developer"></div>
 
-			<div class="edgeTileInfoItem" id="category" style="text-transform: capitalize;"></div>
+			<div class="edgeItem" id="category" style="text-transform: capitalize;"></div>
 		</div>
 
 	</div>

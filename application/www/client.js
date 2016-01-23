@@ -3,126 +3,125 @@
  * Spaceify Inc. 2014
  */
 
-var bs_id = "default";							// This is the id we use to connect to big screen(s). Available big screen ids can be acquired
-												// using this spacelets getBigScreenIds method. It would be easy to a build selector for choosing 
-												// a specific bigscreen but lets assume some big screen has the "default" id. Spacelets content.html 
-												// can get the id from 'window.parent.bs_id' and must use it when messaging with the picture viewer 
-												// spacelet (parent is the big screen IFRAME where content.html is loaded).
+var bs_id = "default";									// This is the id we use to connect to big screen(s). Available big screen ids can be acquired
+														// using this spacelets getBigScreenIds method. It would be easy to a build selector for choosing 
+														// a specific bigscreen but lets assume some big screen has the "default" id. Spacelets content.html 
+														// can get the id from 'window.parent.bs_id' and must use it when messaging with the picture viewer 
+														// spacelet (parent is the big screen IFRAME where content.html is loaded).
+var pictureViewerClient = null;
 
-var spaceletRPC = null;
-
-var RECONNECT_TIMEOUT = 10 * 1000;
-
-/*****************
-* DOM AND EVENTS *
-*****************/
-window.addEventListener("load", function()
+	/* DOM AND EVENTS // // // // // // // // // // */
+window.addEventListener("spaceifyReady", function()		// When Spaceify has injected its and applications files it sends this event.
 {
-	// jQuery is required and must be loaded if it isn't.
-	if(typeof jQuery == "undefined")
-	{
-		var script = document.createElement('script');
-		script.type = "text/javascript";
-		script.onreadystatechange = function() { if(this.readyState == 4) connect(); }
-		script.onload = function() { connect(); }
-		script.src = location.protocol + "//edge.spaceify.net/js/jquery-1.11.1.min.js";
-
-		var head = document.getElementsByTagName("head")[0] || document.documentElement;
-		head.parentNode.insertBefore(script, head.nextSibling);
-	}
-	else
-		connect();
+	pictureViewerClient = new PictureViewerClient();
+	pictureViewerClient.initialize();
 });
 
-/*****************
-* RPC CONNECTION *
-*****************/
-function connect()
+	/* CLASS // // // // // // // // // // */
+function PictureViewerClient()
 {
-	$SC.startSpacelet("spaceify/pictureviewer", "spaceify.org/services/pictureviewer", function(err, data)
+	var self = this;
+
+	var pv_service = null;
+	var client_id = Math.floor(Math.random() * (Math.pow(2, 32) - 1));
+
+	var RECONNECT_TIMEOUT = 10 * 1000;
+
+	var core = new SpaceifyCore();
+	var network = new SpaceifyNetwork();
+	var utility = new SpaceifyUtility();
+
+	self.initialize = function()
 	{
-		if(data)
+		utility.addjQuery(connect);															// Adds jQuery if it is not already on the host page
+	}
+
+	var connect = function()
+	{
+		core.startSpacelet("spaceify/pictureviewer", function(err, services)
 		{
-			// Remember the JSON-RPC connection to the service, call the service.
-			if(data.rpc)
-			{
-				spaceletRPC = data.rpc;											// RPC connection to the spacelet...
-				spaceletRPC.connectionListener(close);							// ..is kept open as long as spacelet closes it
+			if(services)
+			{ // services is an instance of SpaceifyService class. Use its methods to get service connections etc. (see documentation)
+				pv_service = services.getService("spaceify.org/services/pictureviewer");	// Get the service connection
 
-				spaceletRPC.call("clientConnect", [bs_id], null, null);			// Notify spacelet of connected client
+				services.setDisconnectionListener(pv_service, disconnectionListener);		// Try to reconnect if connection is lost
 
-				processImgTags(true);											// Modify img tags
+				pv_service.callRPC("clientConnect", [bs_id], null, null);					// Notify spacelet of a connected client
 
-				if(localStorage)												// Clear paywall
+				processImgTags(true);														// Modify img tags
+
+				if(localStorage)															// Clear paywall
 					localStorage.clear();
 			}
 			else
-				close(true, false, language.E_NO_SERVICE);
-		}
-		else
-			close(true, false, err);
-	});
-}
-
-function close(isInternal, status, err)
-{
-	if(spaceletRPC)
-	{
-		spaceletRPC.close();
-		spaceletRPC = null;
+				{
+				showMessage(err);
+				disconnectionListener("");
+				}
+		});
 	}
 
-	initialize(status, err);
-
-	window.setTimeout(connect, RECONNECT_TIMEOUT);								// Try to reconnect
-}
-
-/*********************************************
-* EVENTS FROM THE INJECTED/MODIFIED CONTROLS *
-*********************************************/
-function showImage(url)
-{
-	spaceletRPC.call("showPicture", [url, bs_id, $SN.isSecure()], self, function(err, data)
+	var disconnectionListener = function(service_name)
 	{
-		if(data == -1)
-			showMessage(language.E_NO_BIG_SCREEN);
-		else if(data > 0)
-			showMessage(language.E_LOAD_CONTENT);
-	});
-}
+		pv_service = null;
 
-/*******************
-* COMMON FUNCTIONS *
-*******************/
-function processImgTags(bSet)
-{
-	//var regx = /(\.jpg|\.png|\.gif)$/;
-	var color = (bSet ? "#0F0" : "#F80");
+		processImgTags(false);
 
-	$('img').each(function()
+		window.setTimeout(connect, RECONNECT_TIMEOUT);										// Try to reconnect
+	}
+
+	/*********************************************
+	* EVENTS FROM THE INJECTED/MODIFIED CONTROLS *
+	*********************************************/
+	var showPicture = function(pid)
 	{
-		$(this).css("margin", "0px");
-		$(this).css("padding", "0px");
-		$(this).css("border-top", "4px solid " + color);
-		$(this).css("border-bottom", "4px solid " + color);
-		$(this).css("box-sizing", "border-box");
-
-		$(this).click(function()
+		pv_service.callRPC("showPicture", [pid, bs_id], self, function(err, data)
 		{
-			showImage($(this).attr("src"), false);
-			$(this).fadeOut(500, function() { $(this).fadeIn(500); });
+			if(data == -1)
+				showMessage(language.E_NO_BIG_SCREEN);
 		});
-	});
-}
+	}
 
-function initialize(status, err)
-{
-	showMessage(err);
-	processImgTags(status);
-}
+	/*******************
+	* COMMON FUNCTIONS *
+	*******************/
+	var processImgTags = function (bSet)
+	{
+		//var regx = /(\.jpg|\.png|\.gif)$/;
+		var color = (bSet ? "#0F0" : "#F80");
 
-function showMessage(err)
-{
-	if(err)
-		console.log($SU.makeErrorString(err));
+		jQuery("img").each(function()
+		{
+			if(!jQuery(this).attr("src") || jQuery(this).attr("src").indexOf("snstatic.fi") == -1)	// Link to Helsingin Sanomat image
+				return;
+
+			var parser = network.parseURL(jQuery(this).attr("src"));								// Get the picture id from the URL, test its validity
+			var parts = parser.pathname.split("/");
+			var pid = parts[parts.length - 1];
+
+			if(!/^[0-9]+$/.test(pid))
+				return;
+
+			jQuery(this).css("margin", "0px");
+			jQuery(this).css("padding", "0px");
+			jQuery(this).css("border-top", "4px solid " + color);
+			jQuery(this).css("border-bottom", "4px solid " + color);
+			jQuery(this).css("box-sizing", "border-box");
+
+			jQuery(this).attr("data-pid", pid);
+
+			jQuery(this).click(function()
+			{
+				showPicture(jQuery(this).attr("data-pid"));
+				jQuery(this).fadeOut(500, function() { jQuery(this).fadeIn(500); });
+			});
+		});
+	}
+
+	var showMessage = function(err)
+	{
+		if(err)
+			console.log(utility.errorsToString(err));
+	}
+
 }

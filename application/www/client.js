@@ -4,10 +4,10 @@
  */
 
 var bs_id = "default";									// This is the id we use to connect to big screen(s). Available big screen ids can be acquired
-														// using this spacelets getBigScreenIds method. It would be easy to a build selector for choosing 
-														// a specific bigscreen but lets assume some big screen has the "default" id. Spacelets content.html 
-														// can get the id from 'window.parent.bs_id' and must use it when messaging with the picture viewer 
-														// spacelet (parent is the big screen IFRAME where content.html is loaded).
+											// using this spacelets getBigScreenIds method. It would be easy to a build selector for choosing 
+											// a specific bigscreen but lets assume some big screen has the "default" id. Spacelets content.html 
+											// can get the id from 'window.parent.bs_id' and must use it when messaging with the picture viewer 
+											// spacelet (parent is the big screen IFRAME where content.html is loaded).
 var pictureViewerClient = null;
 
 	/* DOM AND EVENTS // // // // // // // // // // */

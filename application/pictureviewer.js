@@ -1,159 +1,90 @@
 #!/usr/bin/env node
 /**
  * PictureViewer, 2.4.2014 Spaceify Inc.
- * 
+ *
+ * rpcObj = { is_secure: Boolean, id: Number, server_type: String, remotePort: Number, remoteAddress: Number, origin: String }
+ * serviceObj = { id: Number, is_secure: Boolean, service_name: String, server_type: String, remotePort: Number, remoteAddress: Number, origin: String }
+ *
  * @class PictureViewer
  */
 
-var fs = require("fs");
-var fibrous = require("fibrous");
-var logger = require("/api/logger");
-var Utility = require("/api/utility");
-var Config = require("/api/config")();
-var WebServer = require('/api/webserver');
-var WebSocketRPCClient = require("/api/websocketrpcclient");
-var WebSocketRPCServer = require("/api/websocketrpcserver");
+var spaceify = require("/api/spaceifyapplication.js");
 
 function PictureViewer()
-{
-	var self = this;
-
-	var clients = {};
-	var content = {};
-	var content_type = "spaceify/pictureviewer";
-	var httpServer = new WebServer();
-	var httpsServer = new WebServer();
-	var rpc = new WebSocketRPCServer();
-	var rpcs = new WebSocketRPCServer();
-	var rpcBS = new WebSocketRPCClient();
-	var rpcCore = new WebSocketRPCClient();
-	var www_path = Config.APPLICATION_WWW_PATH;
-	var ca_crt = Config.API_WWW_PATH + Config.SPACEIFY_CRT;
-	var key = Config.APPLICATION_TLS_PATH + Config.SERVER_KEY;
-	var crt = Config.APPLICATION_TLS_PATH + Config.SERVER_CRT;
-
-	self.start = fibrous( function()
 	{
-		try
-		{
-			// Establish a RPC connection to the Spaceify Core
-			rpcCore.sync.connect({hostname: Config.EDGE_HOSTNAME, port: Config.CORE_PORT_WEBSOCKET, persistent: true, owner: "Pictureviewer"});
+var self = this;
 
-			// Start applications JSON-RPC ws and wss servers
-			rpc.exposeMethod("getBigScreenIds", self, self.getBigScreenIds);		// Pictureviewers methods
-			rpc.exposeMethod("showPicture", self, self.showPicture);
-			rpc.exposeMethod("clientConnect", self, self.clientConnect);
-			rpc.exposeMethod("contentConnect", self, self.contentConnect);
-			rpc.setDisconnectionListener(disconnectionListener);
-			rpc.connect.sync({hostname: null, port: Config.FIRST_SERVICE_PORT, owner: "Pictureviewer"});
-			
-			rpcs.exposeMethod("getBigScreenIds", self, self.getBigScreenIds);
-			rpcs.exposeMethod("showPicture", self, self.showPicture);
-			rpcs.exposeMethod("clientConnect", self, self.clientConnect);
-			rpcs.exposeMethod("contentConnect", self, self.contentConnect);
-			rpcs.setDisconnectionListener(disconnectionListener);
-			rpcs.connect.sync({hostname: null, port: Config.FIRST_SERVICE_PORT_SECURE, is_secure: true, key: key, crt: crt, ca_crt: ca_crt, owner: "Pictureviewer" });
+var clients = {};
+var content = {};
+var content_type = "spaceify/pictureviewer";
 
-			// Start applications http and https web servers
-			httpServer.connect.sync({hostname: null, port: 80, www_path: www_path, owner: "pictureviewer"});
-			httpsServer.connect.sync({hostname: null, port: 443, is_secure: true, key: key, crt: crt, ca_crt: ca_crt, www_path: www_path, owner: "Pictureviewer"});
+var pv_service = pv_service_secure = null;
+var pv_service_name = "spaceify.org/services/pictureviewer";
 
-			// Register provided services
-			rpcCore.sync.callRPC("registerService", ["spaceify.org/services/pictureviewer"], self);
+var bs_service = bs_service_secure = null;
+var bs_service_name = "spaceify.org/services/bigscreen";
 
-			// Connect to the Big screen application
-				// Get the required service - this throws an error if service is not available -> initialization fails and spacelet is not started.
-			var service = rpcCore.sync.callRPC("getService", ["spaceify.org/services/bigscreen", null], self);
-
-				// Open a connection to the service.
-			rpcBS.sync.connect({hostname: Config.EDGE_HOSTNAME, port: service.port, persistent: true});
-
-			// Application initialialized itself successfully.
-			console.log(Config.CLIENT_APPLICATION_INITIALIZED);
-		}
-		catch(err)
-		{
-			// Application failed to initialialize itself. Pass the error message to the core.
-			logger.error("{{" + err.message + "}}");
-			console.log(Config.CLIENT_APPLICATION_UNINITIALIZED);
-
-			stop.sync();
-		}
-		finally
-		{
-			rpcCore.sync.close();
-		}
-	});
-
-	stop = fibrous( function()
+	// MANAGE CONNECTIONS!!! -- -- -- -- -- -- -- -- -- -- //
+var onClientDisconnected = function(serviceObj)
 	{
-		rpc.sync.close();
-		rpcs.sync.close();
+	if(clients[serviceObj.id])											// Remove disconnected clients or contents from the lists
+		delete clients[serviceObj.id];
 
-		httpServer.sync.close();
-		httpsServer.sync.close();
-
-		rpcBS.sync.close();
-	});
-
-	/************************
-	* MANAGE CONNECTIONS!!! *
-	************************/
-	var disconnectionListener = function(connection)
-	{
-		if(clients[connection.id])
-			delete clients[connection.id];
-
-		if(content[connection.id])
-			delete content[connection.id];
+	if(content[serviceObj.id])
+		delete content[serviceObj.id];
 	}
 
-	/***************************
-	* EXPOSED JSON-RPC METHODS *
-	***************************/
-
-	// Add a client to the connected clients
-	self.clientConnect = fibrous( function(bs_id)
+	// EXPOSED JSON-RPC METHODS -- -- -- -- -- -- -- -- -- -- //
+var clientConnect = function(bs_id, rpcObj)
 	{
-		var connection = arguments[arguments.length - 1];
-		clients[connection.id] = {bs_id: bs_id, connection: connection, is_secure: connection.is_secure};
-	});
+	clients[rpcObj.id] = {bs_id: bs_id, is_secure: rpcObj.is_secure};	// Add a client to the connected clients
+	}
 
-	// Add a content page to the connected content pages
-	self.contentConnect = fibrous( function(bs_id)
+var contentConnect = function(bs_id, rpcObj)
 	{
-		var connection = arguments[arguments.length - 1];
-		content[connection.id] = {bs_id: bs_id, connection: connection, is_secure: connection.is_secure};
-	});
+	content[rpcObj.id] = {bs_id: bs_id, is_secure: rpcObj.is_secure};	// Add a content page to the connected content pages
+	}
 
-	// Send picture id to the content page(s) having the bs_id.
-	self.showPicture = fibrous( function(pid, bs_id, is_secure)
+var showPicture = function(pid, bs_id, rpcObj)
 	{
-		var content_pages = 0;
-		for(var id in content)												// Send showPicture request to all content pages having the bs_id
+	var content_ids = [];												// Send picture id to the content page(s) having the bs_id
+
+	for(var id in content)
 		{
-			if(content[id].bs_id == bs_id)
-				content_pages += (is_secure ? rpc : rpcs).sync.callRPC("showPicture", [pid], self, null, id);
+		if(content[id].bs_id == bs_id)
+			content_ids.push(id);
 		}
 
-		if(content_pages == 0)												// No content pages having our content available yet
-			content_pages = rpcBS.sync.callRPC("loadContent", [Utility.getApplicationURL(is_secure) + "/content.html?pid=" + pid, bs_id, content_type], self);
+	if(content_ids.length == 0)											// No content pages having our content available yet
+		(!rpcObj.is_secure ? bs_service : bs_service_secure).callRpc("loadContent", [spaceify.getOwnUrl(rpcObj.is_secure, true) + "/content.html?pid=" + pid + "&bs_id=" + bs_id, bs_id, content_type], self);
+	else																// Send showPicture request to all content pages having the bs_id
+		for(var i=0; i<content_ids.length; i++)
+			(!rpcObj.is_secure ? pv_service : pv_service_secure).callRpc("showPicture", [pid], self, null, content_ids[i]);
+	}
 
-		return content_pages;
-	});
-
-	// Get the ids from big screens and relay them to the client
-	self.getBigScreenIds = fibrous( function()
+	// -- -- -- -- -- -- -- -- -- -- //
+self.start = function()
 	{
-		return rpcBS.sync.callRPC("getBigScreenIds", [], self);
-	});
+	bs_service = spaceify.getRequiredService(bs_service_name);
+	bs_service_secure = spaceify.getRequiredServiceSecure(bs_service_name);
+
+	pv_service = spaceify.getProvidedService(pv_service_name);
+	pv_service_secure = spaceify.getProvidedServiceSecure(pv_service_name);
+
+	spaceify.exposeRpcMethodProvided("showPicture", self, showPicture, pv_service_name);
+	spaceify.exposeRpcMethodProvided("clientConnect", self, clientConnect, pv_service_name);
+	spaceify.exposeRpcMethodProvided("contentConnect", self, contentConnect, pv_service_name);
+
+	//spaceify.setConnectionListenersProvided(onClientConnected, pv_service_name);
+	spaceify.setDisconnectionListenersProvided(onClientDisconnected, pv_service_name);
+	}
 
 }
 
-fibrous.run(function()																		// Start the application
+var stop = function()
 	{
-	logger.setOptions({labels: logger.ERROR});
+	spaceify.stop();
+	}
 
-	var pictureViewer = new PictureViewer();
-	pictureViewer.sync.start();
-	});
+var pictureViewer = new PictureViewer();
+spaceify.start(pictureViewer, {webservers: {http: true, https: true}});

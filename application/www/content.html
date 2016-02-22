@@ -5,180 +5,202 @@
 
 	<title></title>
 
-	<script src="http://10.0.0.1/lib/spaceifyinitialize.js"></script>						<!-- Use Spaceify's classes. Wait for spaceifyReady event! -->
-
+	<script src="http://10.0.0.1//js/jquery-1.11.3.min.js"></script>
+	<script src="http://10.0.0.1/libs/spaceifyinitialize.js"></script>				<!-- Use Spaceify's classes. Wait for spaceifyReady event! -->
+	
 	<script type="text/javascript">
-		//document.domain = window.location.hostname;											// Same Origin Policy, bigscreen has the same domain
-
 		var pictureViewer = null;
 
-		/*****************
-		* DOM AND EVENTS *
-		*****************/
+			// DOM AND EVENTS -- -- -- -- -- -- -- -- -- -- //
 		window.addEventListener("spaceifyReady", function()
-		{
-			pictureViewer = new PictureViewer(window.parent.bs_id);							// This iframe is identified by its parents id
-			pictureViewer.initialize();
+			{
+			var getp = new SpaceifyNetwork().parseGET(window.location.href);
 
-			window.addEventListener("resize", pictureViewer.resize, false);
-		}, false);
+			pictureViewer = new PictureViewer(getp.bs_id ? getp.bs_id : "default");	// This iframe is identified by its parents id
+			pictureViewer.getResources();
+			}, false);
 
-		/***************
-		* PicureViewer *
-		***************/
+		window.addEventListener("resize", function()
+			{
+			if(pictureViewer)
+				pictureViewer.resize();
+			});
+
+			// PicureViewer -- -- -- -- -- -- -- -- -- -- //
 		function PictureViewer(bs_id)
 		{
-			var self = this;
-			var pictures = [];
-			var picturesPos = -1;
-			var pictureWidth = 0;
-			var pictureHeight = 0;
-			var pictureTimeoutId = null;
-			var messageTimeoutId = null;
-			var pv_service_name = "spaceify.org/services/pictureviewer";
-			var content_id = Math.floor(Math.random() * (Math.pow(2, 32) - 1));
+		var self = this;
 
-			var MAX_PICTURES = 4;
-			var FADEIN_TIME = 500;
-			var FADEOUT_TIME = 500;
-			var INFO_TIMEOUT = 5 * 1000;
-			var PICTURE_TIMEOUT = 5 * 1000;
-			var RECONNECT_TIMEOUT = 10 * 1000;
+		var spacelet = new Spacelet();
+		var config = new SpaceifyConfig();
+		var network = new SpaceifyNetwork();
+		var request = new SpaceifyRequest();
 
-			var request = new SpaceifyRequest();
-			var network = new SpaceifyNetwork();
-			var services = new SpaceifyService();
+		var pictures = [];
+		var picturesPos = -1;
+		var pictureWidth = 0;
+		var pictureHeight = 0;
+		var pictureTimeoutId = null;
+		var messageTimeoutId = null;
+		var content_id = Math.floor(Math.random() * (Math.pow(2, 32) - 1));
 
-			self.initialize = function()
+		var is_initialized = false;
+		var is_secure = network.isSecure();
+			
+		var unique_name = "spaceify/pictureviewer";
+		var service_name = "spaceify.org/services/pictureviewer";
+
+		var MAX_PICTURES = 4;
+		var FADEIN_TIME = 500;
+		var FADEOUT_TIME = 500;
+		var INFO_TIMEOUT = 5 * 1000;
+		var PICTURE_TIMEOUT = 5 * 1000;
+		var RECONNECT_TIMEOUT = 10 * 1000;
+
+		self.getResources = function()
 			{
-				request																		// Use chaining to prepare tags for load
-				.addjQuery()
-				.addCSS("content.css", "pv_content_css", request.head(window), "screen", "spaceify/pictureviewer")
-				.addJS("language.js", "pv_content_language", request.head(window), "spaceify/pictureviewer")
-				.load(function()
+			request																		// Use chaining to prepare tags for loading
+			.addjQuery()
+			.addCSS("content.css", "pv_content_css", request.head(window), "screen", unique_name)
+			.addJS("language.js", "pv_content_language", request.head(window), unique_name)
+			.load(function()
 				{
-					bindOnLoad();
-					connect();
+				bindOnLoad();
+
+				spacelet.start(unique_name, started);									// Start the spacelet after the resources are ready
 				});
 			}
 
-			var bindOnLoad = function()
-			{   // Bind onload event handler to the picture element. Fired when src is changed.
-				jQuery("#picture").load(function()
-				{
-					pictureWidth = jQuery(this).width();
-					pictureHeight = jQuery(this).height();
-					self.resize();
+			// SPACELET -- -- -- -- -- -- -- -- -- -- //
+		var started = function(err, status)
+			{
+			if(!status)																	// Try starting the spacelet again
+				window.setTimeout(spacelet.start, RECONNECT_TIMEOUT, unique_name, started);
+			else
+				handleServices();
+			}
 
-					jQuery(this).fadeIn(FADEIN_TIME, function()
+			// SERVICE -- -- -- -- -- -- -- -- -- -- //
+		var handleServices = function()
+			{
+			var service = spacelet.getRequiredService(service_name);
+
+			if(service && service.getStatus() == config.CONNECTED && !is_initialized)	// Initialize only once. Service survives reconnection.
+				{
+				if(!is_initialized)
+					{ // Same service object is used even after disconnection and there is no need to initialize it more than once.
+					service.setDisconnectionListener(reconnectService);						// Reconnect
+
+					service.exposeRpcMethod("showPicture", self, showPicture);
+
+					var getobj = network.parseGET(window.location.href);					// Show the initially requested image
+					showPicture(getobj.pid);
+
+					is_initialized = true;
+					}
+
+				service.callRpc("contentConnect", [bs_id], null, null);					// Notify spacelet of connected CONTENT	
+				}
+			else
+				reconnectService(service);
+			}
+
+		var reconnectService = function(service)
+			{ // Try to reconnect
+			window.setTimeout(service.reconnect, RECONNECT_TIMEOUT, handleServices);
+			}
+
+			// CONTENT -- -- -- -- -- -- -- -- -- -- //
+		var bindOnLoad = function()
+			{   // Bind onload event handler to the picture element. Fired when src is changed.
+			jQuery("#picture").load(function()
+				{
+				pictureWidth = jQuery(this).width();
+				pictureHeight = jQuery(this).height();
+				self.resize();
+
+				jQuery(this).fadeIn(FADEIN_TIME, function()
 					{
-						picturesPos++;
-						pictureTimeoutId = setTimeout(loadPicture, PICTURE_TIMEOUT);
+					picturesPos++;
+					pictureTimeoutId = setTimeout(loadPicture, PICTURE_TIMEOUT);
 					});
 				});
 			}
 
-			var connect = function()
-			{ // Picture viewer spacelet is already started and just connect to it
-				services.connectService(pv_service_name, false, function(err, service)
-				{
-					if(err)
-						disconnectionListener("");
-					else
-					{
-						services.setDisconnectionListener(service, disconnectionListener);			// Try to reconnect if connection is lost
-
-						service.exposeMethod("showPicture", self, self.showPicture);				// Messages from client.js
-
-						service.callRPC("contentConnect", [bs_id], null, null);						// Notify spacelet of connected content
-
-						var getobj = network.parseGET(window.location.href);						// Show the initially requested image
-						self.showPicture(getobj.pid);
-					}
-				});
-			}
-
-			var disconnectionListener = function(service_name)
+		var showPicture = function(pid)
 			{
-				window.setTimeout(connect, RECONNECT_TIMEOUT * 1000);								// Try to reconnect
-			}
-
-			self.showPicture = function(pid)
-			{
-				var ppos = -1;																// Is image already in the array
-				for(var p=0; p<pictures.length; p++)
+			var ppos = -1;																// Is image already in the array
+			for(var p=0; p<pictures.length; p++)
 				{
-					if(pictures[p] == pid)
+				if(pictures[p] == pid)
 					{ ppos = p; break; }
 				}
 
-				if(ppos == -1)																// Add only new pictures to the array
+			if(ppos == -1)																// Add only new pictures to the array
 				{
-					if(pictures.length == MAX_PICTURES)											// Max pictures -> remove first
-						pictures.shift();
-					pictures.push(pid);
-					picturesPos = pictures.length - 1;
+				if(pictures.length == MAX_PICTURES)											// Max pictures -> remove first
+					pictures.shift();
+				pictures.push(pid);
+				picturesPos = pictures.length - 1;
 				}
-				else																		// Show existing image
-					picturesPos = ppos;
+			else																		// Show existing image
+				picturesPos = ppos;
 
-				loadPicture();
-
-				return 1;																	// Return 1 for spacelet (see spacelets showPicture)
+			loadPicture();
 			}
 
-			var loadPicture = function()
+		var loadPicture = function()
 			{
-				if(pictureTimeoutId)														// Clear previous timer
-					window.clearTimeout(pictureTimeoutId);
-				pictureTimeoutId = null;
+			if(pictureTimeoutId)														// Clear previous timer
+				window.clearTimeout(pictureTimeoutId);
+			pictureTimeoutId = null;
 
-				var vobj = (jQuery("#picture").is(":visible") ? jQuery("#picture") : jQuery("#info"));
-				vobj.fadeOut(FADEOUT_TIME, function()
+			var vobj = (jQuery("#picture").is(":visible") ? jQuery("#picture") : jQuery("#info"));
+			vobj.fadeOut(FADEOUT_TIME, function()
 				{
-					if(picturesPos == pictures.length)										// Show info page
+				if(picturesPos == pictures.length)										// Show info page
 					{
-						picturesPos = 0;
-						jQuery("#info").fadeIn(FADEIN_TIME);
-						pictureTimeoutId = setTimeout(loadPicture, INFO_TIMEOUT);
+					picturesPos = 0;
+					jQuery("#info").fadeIn(FADEIN_TIME);
+					pictureTimeoutId = setTimeout(loadPicture, INFO_TIMEOUT);
 					}
-					else																	// Show image
+				else																	// Show image
 					{
-						var pict = jQuery("#picture");
-						pict.width("auto");														// "Reset" size or otherwise the image won't be resized in the load event
-						pict.height("auto");
-						pict.attr("src", "http://hs10.snstatic.fi/webkuva/taysi/2000/" + pictures[picturesPos]);
+					var pict = jQuery("#picture");
+					pict.width("auto");														// "Reset" size or otherwise the image won't be resized in the load event
+					pict.height("auto");
+					pict.attr("src", "http://hs10.snstatic.fi/webkuva/taysi/2000/" + pictures[picturesPos]);
 					}
 				});
 			}
 
-			self.resize = function()
+		self.resize = function()
 			{
-				var pict = jQuery("#picture");
-				if(!pict || pict.length == 0)
-					return;
+			var pict = jQuery("#picture");
+			if(!pict || pict.length == 0)
+				return;
 
-				var picturew = pictureWidth;
-				var pictureh = pictureHeight;
-				var screenw = jQuery(window).width();
-				var screenh = jQuery(window).height();
+			var picturew = pictureWidth;
+			var pictureh = pictureHeight;
+			var screenw = jQuery(window).width();
+			var screenh = jQuery(window).height();
 
-				var wratio = 1.0;															// If the picture is wider and/or taller than the screen, use the smaller ratio to scale it.
-				var hratio = 1.0;
-				if(picturew > screenw)
-					wratio = screenw / picturew;
-				if(pictureh > screenh)
-					hratio = screenh / pictureh;
-				var ratio = Math.min(wratio, hratio);
+			var wratio = 1.0;															// If the picture is wider and/or taller than the screen, use the smaller ratio to scale it.
+			var hratio = 1.0;
+			if(picturew > screenw)
+				wratio = screenw / picturew;
+			if(pictureh > screenh)
+				hratio = screenh / pictureh;
+			var ratio = Math.min(wratio, hratio);
 
-				picturew = Math.round(picturew * ratio);
-				pictureh = Math.round(pictureh * ratio);
+			picturew = Math.round(picturew * ratio);
+			pictureh = Math.round(pictureh * ratio);
 
-				pict.width(picturew);
-				pict.height(pictureh);
-				pict.css("position", "absolute");
-				pict.css("top", (Math.abs(screenh - pictureh) / 2) + "px");
-				pict.css("left", (Math.abs(screenw - picturew) / 2) + "px");
+			pict.width(picturew);
+			pict.height(pictureh);
+			pict.css("position", "absolute");
+			pict.css("top", (Math.abs(screenh - pictureh) / 2) + "px");
+			pict.css("left", (Math.abs(screenw - picturew) / 2) + "px");
 			}
 
 		}

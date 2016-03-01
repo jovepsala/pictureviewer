@@ -14,7 +14,7 @@
   ],
   "name": "Picture viewer",
   "unique_name": "spaceify/pictureviewer",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "type": "spacelet",
   "category": "graphics",
   "shared": true,

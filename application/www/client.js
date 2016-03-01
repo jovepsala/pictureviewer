@@ -3,7 +3,7 @@
  * Spaceify Inc. 2014
  */
 
-var bs_id = "default";
+var bigscreenId = "default";
 var pictureViewerClient = null;
 
 	// DOM AND EVENTS -- -- -- -- -- -- -- -- -- -- */
@@ -19,15 +19,12 @@ function PictureViewerClient()
 var self = this;
 
 var spacelet = new Spacelet();
-var config = new SpaceifyConfig();
 var network = new SpaceifyNetwork();
-var utility = new SpaceifyUtility();
 var request = new SpaceifyRequest();
 
-var pv_service = null;
+var pictureviewerService = null;
 
 var unique_name = "spaceify/pictureviewer";
-var pv_service_name = "spaceify.org/services/pictureviewer";
 
 var RECONNECT_TIMEOUT = 10 * 1000;
 
@@ -43,44 +40,29 @@ self.getResources = function()
 var started = function(err, status)
 	{
 	if(!status)																					// Try starting the spacelet again
-		{
-		showMessage(err);
 		window.setTimeout(spacelet.start, RECONNECT_TIMEOUT, unique_name, started);
-		}
 	else
 		{
-		pv_service = spacelet.getRequiredService(pv_service_name);
-		pv_service.setDisconnectionListener(reconnectService);
+		pictureviewerService = spacelet.getRequiredService("spaceify.org/services/pictureviewer");
 
-		setup();
-		}
-	}
+		pictureviewerService.setDisconnectionListener(disconnectionListener);
 
-	// SERVICE -- -- -- -- -- -- -- -- -- -- //
-var setup = function()
-	{
-	var status = pv_service.getStatus();
-
-	if(status == config.CONNECTED)
-		{
-		pv_service.callRpc("clientConnect", [bs_id], null, null);								// Notify spacelet of a connected CLIENT
+		pictureviewerService.callRpc("clientConnect", [bigscreenId], null, null);				// Notify spacelet of a connected CLIENT
 
 		processImgTags(true);																	// Modify img tags
 
 		if(localStorage)																		// Clear paywall
 			localStorage.clear();
 		}
-	else
-		reconnectService(pv_service);
 	}
 
-var reconnectService = function(/*service*/)
-	{ // Clear current and try to reconnect
+	// SERVICE -- -- -- -- -- -- -- -- -- -- //
+var disconnectionListener = function()
+	{
 	processImgTags(false);
-	window.setTimeout(pv_service.reconnect, RECONNECT_TIMEOUT, setup);
 	}
 
-	// COMMON FUNCTIONS -- -- -- -- -- -- -- -- -- -- //
+	// -- -- -- -- -- -- -- -- -- -- //
 var processImgTags = function (bSet)
 	{
 	//var regx = /(\.jpg|\.png|\.gif)$/;
@@ -108,17 +90,11 @@ var processImgTags = function (bSet)
 
 		jQuery(this).click(function()
 			{
-			pv_service.callRpc("showPicture", [jQuery(this).attr("data-pid"), bs_id]);
+			pictureviewerService.callRpc("showPicture", [jQuery(this).attr("data-pid"), bigscreenId]);
 
 			jQuery(this).fadeOut(500, function() { jQuery(this).fadeIn(500); });
 			});
 		});
-	}
-
-var showMessage = function(err)
-	{
-	if(err)
-		console.log(utility.errorsToString(err));
 	}
 
 }

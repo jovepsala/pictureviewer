@@ -16,15 +16,12 @@ var self = this;
 
 var clients = {};
 var content = {};
-var content_type = "spaceify/pictureviewer";
+var contentType = "spaceify/pictureviewer";
 
-var pv_service = pv_service_secure = null;
-var pv_service_name = "spaceify.org/services/pictureviewer";
+var bigscreenService = null;
+var pictureViewerService = null;
 
-var bs_service = bs_service_secure = null;
-var bs_service_name = "spaceify.org/services/bigscreen";
-
-	// MANAGE CONNECTIONS!!! -- -- -- -- -- -- -- -- -- -- //
+	// CONNECTIONS -- -- -- -- -- -- -- -- -- -- //
 var onClientDisconnected = function(serviceObj)
 	{
 	if(clients[serviceObj.id])											// Remove disconnected clients or contents from the lists
@@ -35,48 +32,45 @@ var onClientDisconnected = function(serviceObj)
 	}
 
 	// EXPOSED JSON-RPC METHODS -- -- -- -- -- -- -- -- -- -- //
-var clientConnect = function(bs_id, rpcObj)
+var clientConnect = function(bigscreenId, rpcObj)
 	{
-	clients[rpcObj.id] = {bs_id: bs_id, is_secure: rpcObj.is_secure};	// Add a client to the connected clients
+	clients[rpcObj.id] = {bigscreenId: bigscreenId};					// Add a client to the connected clients
 	}
 
-var contentConnect = function(bs_id, rpcObj)
+var contentConnect = function(bigscreenId, rpcObj)
 	{
-	content[rpcObj.id] = {bs_id: bs_id, is_secure: rpcObj.is_secure};	// Add a content page to the connected content pages
+	content[rpcObj.id] = {bigscreenId: bigscreenId};					// Add a content page to the connected content pages
 	}
 
-var showPicture = function(pid, bs_id, rpcObj)
+var showPicture = function(pid, bigscreenId)
 	{
-	var content_ids = [];												// Send picture id to the content page(s) having the bs_id
+	var contentIds = [];												// Send picture id to the content page(s) having the bigscreenId
 
 	for(var id in content)
 		{
-		if(content[id].bs_id == bs_id)
-			content_ids.push(id);
+		if(content[id].bigscreenId == bigscreenId)
+			contentIds.push(id);
 		}
 
-	if(content_ids.length == 0)											// No content pages having our content available yet
-		(!rpcObj.is_secure ? bs_service : bs_service_secure).callRpc("loadContent", [spaceify.getOwnUrl(rpcObj.is_secure, true) + "/content.html?pid=" + pid + "&bs_id=" + bs_id, bs_id, content_type], self);
-	else																// Send showPicture request to all content pages having the bs_id
-		for(var i=0; i<content_ids.length; i++)
-			(!rpcObj.is_secure ? pv_service : pv_service_secure).callRpc("showPicture", [pid], self, null, content_ids[i]);
+	if(contentIds.length == 0)											// No content pages having our content available yet
+		bigscreenService.callRpc("loadContent", [spaceify.getOwnUrl(false, true) + "/content.html?pid=" + pid + "&bigscreenId=" + bigscreenId, bigscreenId, contentType], self);
+	else																// Send showPicture request to all content pages having the bigscreenId
+		for(var i=0; i<contentIds.length; i++)
+			pictureViewerService.callRpc("showPicture", [pid], self, null, contentIds[i]);
 	}
 
 	// -- -- -- -- -- -- -- -- -- -- //
 self.start = function()
 	{
-	bs_service = spaceify.getRequiredService(bs_service_name);
-	bs_service_secure = spaceify.getRequiredServiceSecure(bs_service_name);
+	bigscreenService = spaceify.getRequiredService("spaceify.org/services/bigscreen");
 
-	pv_service = spaceify.getProvidedService(pv_service_name);
-	pv_service_secure = spaceify.getProvidedServiceSecure(pv_service_name);
+	pictureViewerService = spaceify.getProvidedService("spaceify.org/services/pictureviewer");
 
-	spaceify.exposeRpcMethodProvided("showPicture", self, showPicture, pv_service_name);
-	spaceify.exposeRpcMethodProvided("clientConnect", self, clientConnect, pv_service_name);
-	spaceify.exposeRpcMethodProvided("contentConnect", self, contentConnect, pv_service_name);
+	pictureViewerService.exposeRpcMethod("showPicture", self, showPicture);
+	pictureViewerService.exposeRpcMethod("clientConnect", self, clientConnect);
+	pictureViewerService.exposeRpcMethod("contentConnect", self, contentConnect);
 
-	//spaceify.setConnectionListenersProvided(onClientConnected, pv_service_name);
-	spaceify.setDisconnectionListenersProvided(onClientDisconnected, pv_service_name);
+	pictureViewerService.setDisconnectionListener(onClientDisconnected);
 	}
 
 }

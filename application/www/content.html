@@ -16,7 +16,7 @@
 			{
 			var getp = new SpaceifyNetwork().parseGET(window.location.href);
 
-			pictureViewer = new PictureViewer(getp.bs_id ? getp.bs_id : "default");	// This iframe is identified by its parents id
+			pictureViewer = new PictureViewer(getp.bigscreenId ? getp.bigscreenId : "default");	// This iframe is identified by its parents id
 			pictureViewer.getResources();
 			}, false);
 
@@ -27,12 +27,11 @@
 			});
 
 			// PicureViewer -- -- -- -- -- -- -- -- -- -- //
-		function PictureViewer(bs_id)
+		function PictureViewer(bigscreenId)
 		{
 		var self = this;
 
 		var spacelet = new Spacelet();
-		var config = new SpaceifyConfig();
 		var network = new SpaceifyNetwork();
 		var request = new SpaceifyRequest();
 
@@ -42,13 +41,8 @@
 		var pictureHeight = 0;
 		var pictureTimeoutId = null;
 		var messageTimeoutId = null;
-		var content_id = Math.floor(Math.random() * (Math.pow(2, 32) - 1));
 
-		var is_initialized = false;
-		var is_secure = network.isSecure();
-			
 		var unique_name = "spaceify/pictureviewer";
-		var service_name = "spaceify.org/services/pictureviewer";
 
 		var MAX_PICTURES = 4;
 		var FADEIN_TIME = 500;
@@ -59,10 +53,10 @@
 
 		self.getResources = function()
 			{
-			request																		// Use chaining to prepare tags for loading
+			request																		// Use chaining to prepare resources (tags) for loading
 			.addjQuery()
-			.addCSS("content.css", "pv_content_css", request.head(window), "screen", unique_name)
-			.addJS("language.js", "pv_content_language", request.head(window), unique_name)
+			.addCSS("content.css", "pvContentCss", request.head(window), "screen", unique_name)
+			.addJS("language.js", "pvContentLanguage", request.head(window), unique_name)
 			.load(function()
 				{
 				bindOnLoad();
@@ -74,40 +68,18 @@
 			// SPACELET -- -- -- -- -- -- -- -- -- -- //
 		var started = function(err, status)
 			{
-			if(!status)																	// Try starting the spacelet again
+			if(!status)																		// Try to start the spacelet again
 				window.setTimeout(spacelet.start, RECONNECT_TIMEOUT, unique_name, started);
 			else
-				handleServices();
-			}
-
-			// SERVICE -- -- -- -- -- -- -- -- -- -- //
-		var handleServices = function()
-			{
-			var service = spacelet.getRequiredService(service_name);
-
-			if(service && service.getStatus() == config.CONNECTED && !is_initialized)	// Initialize only once. Service survives reconnection.
 				{
-				if(!is_initialized)
-					{ // Same service object is used even after disconnection and there is no need to initialize it more than once.
-					service.setDisconnectionListener(reconnectService);						// Reconnect
+				var service = spacelet.getRequiredService("spaceify.org/services/pictureviewer");
+				service.exposeRpcMethod("showPicture", self, showPicture);
 
-					service.exposeRpcMethod("showPicture", self, showPicture);
+				var getobj = network.parseGET(window.location.href);						// Show the initially requested image
+				showPicture(getobj.pid);
 
-					var getobj = network.parseGET(window.location.href);					// Show the initially requested image
-					showPicture(getobj.pid);
-
-					is_initialized = true;
-					}
-
-				service.callRpc("contentConnect", [bs_id], null, null);					// Notify spacelet of connected CONTENT	
+				service.callRpc("contentConnect", [bigscreenId], null, null);				// Notify spacelet of connected CONTENT	
 				}
-			else
-				reconnectService(service);
-			}
-
-		var reconnectService = function(service)
-			{ // Try to reconnect
-			window.setTimeout(service.reconnect, RECONNECT_TIMEOUT, handleServices);
 			}
 
 			// CONTENT -- -- -- -- -- -- -- -- -- -- //

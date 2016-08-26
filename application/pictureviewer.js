@@ -1,9 +1,6 @@
 #!/usr/bin/env node
 /**
- * PictureViewer, 2.4.2014 Spaceify Inc.
- *
- * rpcObj = { is_secure: Boolean, id: Number, server_type: String, remotePort: Number, remoteAddress: Number, origin: String }
- * serviceObj = { id: Number, is_secure: Boolean, service_name: String, server_type: String, remotePort: Number, remoteAddress: Number, origin: String }
+ * PictureViewer, 2.4.2014 Spaceify Oy
  *
  * @class PictureViewer
  */
@@ -22,29 +19,29 @@ var bigscreenService = null;
 var pictureViewerService = null;
 
 	// CONNECTIONS -- -- -- -- -- -- -- -- -- -- //
-var onClientDisconnected = function(serviceObj)
+var onClientDisconnected = function(cId)
 	{
-	if(clients[serviceObj.id])											// Remove disconnected clients or contents from the lists
-		delete clients[serviceObj.id];
+	if(clients[cId])													// Remove disconnected clients or contents from the lists
+		delete clients[cId];
 
-	if(content[serviceObj.id])
-		delete content[serviceObj.id];
+	if(content[cId])
+		delete content[cId];
 	}
 
 	// EXPOSED JSON-RPC METHODS -- -- -- -- -- -- -- -- -- -- //
-var clientConnect = function(bigscreenId, rpcObj)
+var clientConnect = function(bigscreenId)
 	{
-	clients[rpcObj.id] = {bigscreenId: bigscreenId};					// Add a client to the connected clients
+	clients[arguments[arguments.length-1].cId] = {bigscreenId: bigscreenId};	// Add a client to the connected clients
 	}
 
-var contentConnect = function(bigscreenId, rpcObj)
+var contentConnect = function(bigscreenId)
 	{
-	content[rpcObj.id] = {bigscreenId: bigscreenId};					// Add a content page to the connected content pages
+	content[arguments[arguments.length-1].cId] = {bigscreenId: bigscreenId};	// Add a content page to the connected content pages
 	}
 
 var showPicture = function(pid, bigscreenId)
 	{
-	var contentIds = [];												// Send picture id to the content page(s) having the bigscreenId
+	var contentIds = [];														// Send picture id to the content page(s) having the bigscreenId
 
 	for(var id in content)
 		{
@@ -52,9 +49,9 @@ var showPicture = function(pid, bigscreenId)
 			contentIds.push(id);
 		}
 
-	if(contentIds.length == 0)											// No content pages having our content available yet
+	if(contentIds.length == 0)													// No content pages having our content available yet
 		bigscreenService.callRpc("loadContent", [spaceify.getOwnUrl(false, true) + "/content.html?pid=" + pid + "&bigscreenId=" + bigscreenId, bigscreenId, contentType], self);
-	else																// Send showPicture request to all content pages having the bigscreenId
+	else																		// Send showPicture request to all content pages having the bigscreenId
 		for(var i=0; i<contentIds.length; i++)
 			pictureViewerService.callRpc("showPicture", [pid], self, null, contentIds[i]);
 	}

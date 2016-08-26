@@ -1,6 +1,5 @@
 /**
- * Client side code for the Pictureviewer spacelet.
- * Spaceify Inc. 2014
+ * Client side code for the Pictureviewer spacelet, 2014 Spaceify Oy
  */
 
 var bigscreenId = "default";
@@ -26,34 +25,32 @@ var pictureviewerService = null;
 
 var unique_name = "spaceify/pictureviewer";
 
-var RECONNECT_TIMEOUT = 10 * 1000;
-
 self.getResources = function()
 	{
 	request.addjQueryTag(function()																// Add jQuery if it is not already on the host page
 		{
-		spacelet.start(unique_name, started);													// Start the spacelet after jQuery is ready
+		spacelet.start(self, unique_name);														// Start the spacelet after jQuery is ready
 		});
 	}
 
 	// SPACELET -- -- -- -- -- -- -- -- -- -- //
-var started = function(err, status)
+self.start = function(err, status)
 	{
-	if(!status)																					// Try starting the spacelet again
-		window.setTimeout(spacelet.start, RECONNECT_TIMEOUT, unique_name, started);
-	else
-		{
-		pictureviewerService = spacelet.getRequiredService("spaceify.org/services/pictureviewer");
+	pictureviewerService = spacelet.getRequiredService("spaceify.org/services/pictureviewer");
 
-		pictureviewerService.setDisconnectionListener(disconnectionListener);
+	pictureviewerService.setDisconnectionListener(disconnectionListener);
 
-		pictureviewerService.callRpc("clientConnect", [bigscreenId], null, null);				// Notify spacelet of a connected CLIENT
+	pictureviewerService.callRpc("clientConnect", [bigscreenId], null, null);				// Notify spacelet of a connected CLIENT
 
-		processImgTags(true);																	// Modify img tags
+	processImgTags(true);																	// Modify img tags
 
-		if(localStorage)																		// Clear paywall
-			localStorage.clear();
-		}
+	if(localStorage)																		// Clear paywall
+		localStorage.clear();
+	}
+
+self.fail = function()																		// Try to start the spacelet again
+	{
+	window.setTimeout(spacelet.start, 10000, self, unique_name);
 	}
 
 	// SERVICE -- -- -- -- -- -- -- -- -- -- //
@@ -70,7 +67,7 @@ var processImgTags = function (bSet)
 
 	jQuery("img").each(function()
 		{
-		if(!jQuery(this).attr("src") || jQuery(this).attr("src").indexOf("snstatic.fi") == -1)	// Link to Helsingin Sanomat image
+		if(!jQuery(this).attr("src") || jQuery(this).attr("src").indexOf("webkuva") == -1)		// Link to Helsingin Sanomat image
 			return;
 
 		var parser = network.parseURL(jQuery(this).attr("src"));								// Get the picture id from the URL, test its validity

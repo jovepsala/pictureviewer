@@ -5,8 +5,7 @@
 
 	<title></title>
 
-	<script src="http://10.0.0.1//js/jquery-1.11.3.min.js"></script>
-	<script src="http://10.0.0.1/libs/spaceifyinitialize.js"></script>				<!-- Use Spaceify's classes. Wait for spaceifyReady event! -->
+	<script src="http://edge.spaceify.net/libs/spaceifyinitialize.js?jquery"></script>					<!-- Get Spaceify's classes and jQuery. Wait for spaceifyReady event! -->
 	
 	<script type="text/javascript">
 		var pictureViewer = null;
@@ -14,9 +13,9 @@
 			// DOM AND EVENTS -- -- -- -- -- -- -- -- -- -- //
 		window.addEventListener("spaceifyReady", function()
 			{
-			var getp = new SpaceifyNetwork().parseGET(window.location.href);
+			var getobj = new SpaceifyNetwork().parseQuery(window.location.href);
 
-			pictureViewer = new PictureViewer(getp.bigscreenId ? getp.bigscreenId : "default");	// This iframe is identified by its parents id
+			pictureViewer = new PictureViewer(getobj.bigscreenId ? getobj.bigscreenId : "default");	// This iframe is identified by its parents id
 			pictureViewer.getResources();
 			}, false);
 
@@ -75,7 +74,7 @@
 				var service = spacelet.getRequiredService("spaceify.org/services/pictureviewer");
 				service.exposeRpcMethod("showPicture", self, showPicture);
 
-				var getobj = network.parseGET(window.location.href);						// Show the initially requested image
+				var getobj = network.parseQuery(window.location.href);						// Show the initially requested image
 				showPicture(getobj.pid);
 
 				service.callRpc("contentConnect", [bigscreenId], null, null);				// Notify spacelet of connected CONTENT	
@@ -141,7 +140,7 @@
 					var pict = jQuery("#picture");
 					pict.width("auto");														// "Reset" size or otherwise the image won't be resized in the load event
 					pict.height("auto");
-					pict.attr("src", "http://hs10.snstatic.fi/webkuva/taysi/2000/" + pictures[picturesPos]);
+					pict.attr("src", "http://www.hs.fi/webkuva/taysi/2000/" + pictures[picturesPos]);
 					}
 				});
 			}
